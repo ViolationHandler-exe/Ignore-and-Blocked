@@ -63,6 +63,7 @@ namespace Oxide.Plugins
                 {"NotOnBlockedList", "{0} not found on your ignore list."},
                 {"NoBlockedUsers", "You do not have any blocked users."},
                 {"AlreadyOnBlockedList", "{0} is already blocked."},
+                {"SyntaxBlocked", "Syntax: /block <add/+/remove/-> <name/steamID> or /block list"},
                 {"HelpText", "Use /ignore <add|+|remove|-|list> <name/steamID> to add/remove/list ignores"},
                 {"Syntax", "Syntax: /ignore <add/+/remove/-> <name/steamID> or /ignore list"}
             }, this);
@@ -90,7 +91,7 @@ namespace Oxide.Plugins
             }
 
             AddCovalenceCommand("ignore", "cmdIgnore");
-//            AddCovalenceCommand("block", "cmdBlock");
+            AddCovalenceCommand("block", "cmdBlock");
         }
 
         private void SaveIgnores()
@@ -289,7 +290,8 @@ namespace Oxide.Plugins
         {
             if (args == null || args.Length <= 0 || args.Length == 1 && !args[0].Equals("list", StringComparison.OrdinalIgnoreCase))
             {
-                player.Reply(Lang("Syntax", player.Id));
+                // Would prefer to use the variable name "SyntaxBlocked" but doesn't seem to work.
+                player.Reply(Lang("Syntax: /block <add/+/remove/-> <name/steamID> or /block list", player.Id));
                 return;
             }
             switch (args[0].ToLower())
