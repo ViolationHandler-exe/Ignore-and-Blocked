@@ -12,19 +12,16 @@ namespace Oxide.Plugins
     {
         private ConfigData configData;
         private Dictionary<string, PlayerData> IgnoreData;
-        private Dictionary<string, PlayerData> BlockedData;
 
         class ConfigData
         {
             public int IgnoreLimit { get; set; }
-            public int BlockedUsersLimit { get; set; }
         }
 
         class PlayerData
         {
             public string Name { get; set; } = string.Empty;
             public HashSet<string> Ignores { get; set; } = new HashSet<string>();
-            public HashSet<string> BlockedUsers { get; set; } = new HashSet<string>();
         }
 
         protected override void LoadDefaultConfig()
@@ -34,11 +31,6 @@ namespace Oxide.Plugins
                 IgnoreLimit = 30
             };
             Config.WriteObject(config, true);
-            var configBlock = new ConfigData
-            {
-                BlockedUsersLimit = 30
-            };
-            Config.WriteObject(configBlock, true);
         }
 
         private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
@@ -56,14 +48,6 @@ namespace Oxide.Plugins
                 {"AlreadyOnList", "{0} is already ignored."},
                 {"IgnoreAdded", "{0} is now ignored."},
                 {"IgnorelistFull", "Your ignore list is full."},
-                {"BlockedUserAdded", "{0} is now blocked."},
-                {"BlockedUserRemoved", "{0} was removed from your blocked list."},
-                {"BlockedList", "Blocked Players {0}:\n{1}"},
-                {"BlockedListFull", "Your blocked users list is full."},
-                {"NotOnBlockedList", "{0} not found on your ignore list."},
-                {"NoBlockedUsers", "You do not have any blocked users."},
-                {"AlreadyOnBlockedList", "{0} is already blocked."},
-                {"SyntaxBlocked", "Syntax: /block <add/+/remove/-> <name/steamID> or /block list"},
                 {"HelpText", "Use /ignore <add|+|remove|-|list> <name/steamID> to add/remove/list ignores"},
                 {"Syntax", "Syntax: /ignore <add/+/remove/-> <name/steamID> or /ignore list"}
             }, this);
@@ -81,27 +65,13 @@ namespace Oxide.Plugins
             {
                 IgnoreData = new Dictionary<string, PlayerData>();
             }
-            try
-            {
-                BlockedData = Interface.Oxide.DataFileSystem.ReadObject<Dictionary<string, PlayerData>>(Name);
-            }
-            catch
-            {
-                BlockedData = new Dictionary<string, PlayerData>();
-            }
 
             AddCovalenceCommand("ignore", "cmdIgnore");
-            AddCovalenceCommand("block", "cmdBlock");
         }
 
         private void SaveIgnores()
         {
             Interface.Oxide.DataFileSystem.WriteObject(Name, IgnoreData);
-        }
-
-        private void SaveBlockedUsers()
-        {
-            Interface.Oxide.DataFileSystem.WriteObject(Name, BlockedData);
         }
 
         private bool AddIgnore(string playerId, string ignoreId)
@@ -150,73 +120,6 @@ namespace Oxide.Plugins
             return ignores.ToList().ConvertAll(f => f.ToString()).ToArray();
         }
 
-        #region Blocked Users
-
-        private bool AddBlockedUser(string playerId, string blockedUserId)
-        {
-            var playerData = GetPlayerData(playerId);
-            if (playerData.BlockedUsers.Count >= configData.BlockedUsersLimit || !playerData.BlockedUsers.Add(blockedUserId)) return false;
-            SaveBlockedUsers();
-            return true;
-        }
-
-        private bool RemoveBlockedUser(string playerId, string blockedUserId)
-        {
-            if (!GetPlayerData(playerId).BlockedUsers.Remove(blockedUserId)) return false;
-            SaveBlockedUsers();
-            return true;
-        }
-
-        private bool HasBlockedUser(string playerId, string blockedUserId)
-        {
-            return GetPlayerData(playerId).BlockedUsers.Contains(blockedUserId);
-        }
-
-        private bool AreBlockedUser(string playerId, string blockedUserId)
-        {
-            return GetPlayerData(playerId).BlockedUsers.Contains(blockedUserId) && GetPlayerData(blockedUserId).BlockedUsers.Contains(playerId);
-        }
-
-        private bool AreBlockedUser(ulong playerId, ulong blockedUserId)
-        {
-            return AreBlockedUser(playerId.ToString(), blockedUserId.ToString());
-        }
-
-        private bool IsBlockedUser(string playerId, string blockedUserId)
-        {
-            return GetPlayerData(blockedUserId).BlockedUsers.Contains(playerId);
-        }
-
-        private string[] GetBlockedUsersList(string playerId)
-        {
-            PlayerData playerData = GetPlayerData(playerId);
-            List<string> players = new List<string>();
-            foreach (string blockedUserId in playerData.BlockedUsers){
-                players.Add(GetPlayerData(blockedUserId).Name);
-            }
-            return players.ToArray();
-        }
-
-        private string[] IsBlockedBy(string player)
-        {
-            PlayerData value;
-            var blockedUsers = BlockedData.TryGetValue(player, out value) ? value.BlockedUsers.ToArray() : new string[0];
-            return blockedUsers.ToList().ConvertAll(f => f.ToString()).ToArray();
-        }
-
-        private string FindBlockedUser(string block)
-        {
-            if (string.IsNullOrEmpty(block)) return String.Empty;
-            foreach (var playerData in BlockedData)
-            {
-                if (playerData.Key.ToString().Equals(block) || playerData.Value.Name.Contains(block))
-                    return playerData.Key;
-            }
-            return string.Empty;
-        }
-
-        #endregion Blocked Users
-
         private PlayerData GetPlayerData(string playerId)
         {
             var player = FindPlayer(playerId);
@@ -251,7 +154,7 @@ namespace Oxide.Plugins
                         player.Reply(Lang("PlayerNotFound", player.Id, args[1]));
                         return;
                     }
-                    if (player.Id == ignorePlayer.Id)
+                    if (player == ignorePlayer)
                     {
                         player.Reply(Lang("CantAddSelf", player.Id));
                         return;
@@ -283,67 +186,6 @@ namespace Oxide.Plugins
                     return;
             }
         }
-
-        #region Block Users command
-
-        private void cmdBlock(IPlayer player, string command, string[] args)
-        {
-            if (args == null || args.Length <= 0 || args.Length == 1 && !args[0].Equals("list", StringComparison.OrdinalIgnoreCase))
-            {
-                // Would prefer to use the variable name "SyntaxBlocked" but doesn't seem to work.
-                player.Reply(Lang("Syntax: /block <add/+/remove/-> <name/steamID> or /block list", player.Id));
-                return;
-            }
-            switch (args[0].ToLower())
-            {
-                case "list":
-                    var blockedUsersList = GetBlockedUsersList(player.Id);
-                    if (blockedUsersList.Length > 0)
-                        player.Reply(Lang("BlockedList", player.Id,$"{blockedUsersList.Length}/{configData.BlockedUsersLimit}", string.Join(", ", blockedUsersList)));
-                    else
-                        player.Reply(Lang("NoBlockedUsers", player.Id));
-                    return;
-                case "add":
-                case "+":
-                    var blockedPlayer = FindPlayer(args[1]);
-                    if (blockedPlayer == null)
-                    {
-                        player.Reply(Lang("PlayerNotFound", player.Id, args[1]));
-                        return;
-                    }
-                    if (player.Id == blockedPlayer.Id)
-                    {
-                        player.Reply(Lang("CantAddSelf", player.Id));
-                        return;
-                    }
-                    var playerData = GetPlayerData(player.Id);
-                    if (playerData.BlockedUsers.Count >= configData.BlockedUsersLimit)
-                    {
-                        player.Reply(Lang("BlockedListFull", player.Id));
-                        return;
-                    }
-                    if (playerData.BlockedUsers.Contains(blockedPlayer.Id))
-                    {
-                        player.Reply(Lang("AlreadyOnBlockedList",player.Id, blockedPlayer.Name));
-                        return;
-                    }
-                    AddBlockedUser(player.Id, blockedPlayer.Id);
-                    player.Reply(Lang("BlockedUserAdded", player.Id, blockedPlayer.Name));
-                    return;
-                case "remove":
-                case "-":
-                    var blocked = FindBlockedUser(args[1]);
-                    if (blocked == string.Empty)
-                    {
-                        player.Reply(Lang("NotOnBlockedList", player.Id, args[1]));
-                        return;
-                    }
-                    var removed = RemoveBlockedUser(player.Id, blocked);
-                    player.Reply(Lang(removed ? "BlockedUserRemoved" : "NotOnBlockedList", player.Id, args[1]));
-                    return;
-            }
-        }
-        #endregion Block Users command
 
         private void SendHelpText(IPlayer player)
         {
